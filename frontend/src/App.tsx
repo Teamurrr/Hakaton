@@ -1,8 +1,41 @@
+import { useEffect, useState } from 'react'
+import GreenWavePage from './pages/GreenWavePage'
 import './App.css'
 
-const navItems = ['зеленая волна', 'текст 2', 'текст 3']
+const GREEN_WAVE_PATH = '/greenwave'
+
+const navItems = [
+  { label: 'зеленая волна', path: GREEN_WAVE_PATH, primary: true },
+  { label: 'текст 2' },
+  { label: 'текст 3' },
+]
+
+function getCurrentPath() {
+  return window.location.pathname
+}
+
+function navigateTo(path: string) {
+  window.history.pushState({}, '', path)
+  window.dispatchEvent(new PopStateEvent('popstate'))
+}
 
 function App() {
+  const [pathname, setPathname] = useState(getCurrentPath)
+
+  useEffect(() => {
+    const handlePopState = () => setPathname(getCurrentPath())
+
+    window.addEventListener('popstate', handlePopState)
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [])
+
+  if (pathname === GREEN_WAVE_PATH) {
+    return <GreenWavePage onBack={() => navigateTo('/')} />
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -12,13 +45,14 @@ function App() {
         </div>
 
         <nav className="nav-actions" aria-label="Основная навигация">
-          {navItems.map((item, index) => (
+          {navItems.map((item) => (
             <button
-              className={index === 0 ? 'nav-button nav-button-primary' : 'nav-button'}
-              key={item}
+              className={item.primary ? 'nav-button nav-button-primary' : 'nav-button'}
+              key={item.label}
+              onClick={() => item.path && navigateTo(item.path)}
               type="button"
             >
-              {item}
+              {item.label}
             </button>
           ))}
         </nav>
