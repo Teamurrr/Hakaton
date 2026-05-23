@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import GreenWavePage from './pages/GreenWavePage'
+import SmartTrafficLitePage from './pages/smarttrafficlite'
 import './App.css'
 
 const GREEN_WAVE_PATH = '/greenwave'
+const SMART_TRAFFIC_LITE_PATH = '/smarttrafficlite'
 
 const navItems = [
   { label: 'зеленая волна', path: GREEN_WAVE_PATH, primary: true },
@@ -36,6 +38,10 @@ function App() {
     return <GreenWavePage onBack={() => navigateTo('/')} />
   }
 
+  if (pathname === SMART_TRAFFIC_LITE_PATH) {
+    return <SmartTrafficLitePage />
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -45,11 +51,16 @@ function App() {
         </div>
 
         <nav className="nav-actions" aria-label="Основная навигация">
-          {navItems.map((item) => (
+          {navItems.map((item, index) => (
             <button
               className={item.primary ? 'nav-button nav-button-primary' : 'nav-button'}
               key={item.label}
-              onClick={() => item.path && navigateTo(item.path)}
+              onClick={() => {
+                const targetPath = index === 1 ? SMART_TRAFFIC_LITE_PATH : item.path
+                if (targetPath) {
+                  navigateTo(targetPath)
+                }
+              }}
               type="button"
             >
               {item.label}

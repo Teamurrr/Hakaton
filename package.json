@@ -1,0 +1,13 @@
+{
+  "name": "hakaton",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "concurrently -n frontend,smart-traffic -c cyan,green \"npm run dev:frontend\" \"npm run dev:smart-traffic\"",
+    "dev:frontend": "npm --prefix frontend run dev -- --host 127.0.0.1 --port 3000",
+    "dev:smart-traffic": "cd backend/services/smart_traffic_service && ..\\..\\..\\..\\venv\\Scripts\\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --ws websockets"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
