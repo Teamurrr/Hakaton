@@ -6,10 +6,18 @@ class Coordinate(BaseModel):
     lat: float = Field(..., description="Latitude")
 
 
+class SyncedTrafficLight(BaseModel):
+    id: str
+    name: str
+    lat: float
+    lon: float
+    distance_from_start_m: float
+
+
 class GreenWaveRequest(BaseModel):
     start: Coordinate
     end: Coordinate
-    current_speed_kmh: float = Field(..., gt=0, le=120)
+    current_speed_kmh: float | None = Field(None, gt=0, le=120)
     min_speed_kmh: float = Field(20, gt=0, le=120)
     max_speed_kmh: float = Field(80, gt=0, le=120)
     current_time_sec: int | None = Field(
@@ -37,7 +45,7 @@ class GreenWindow(BaseModel):
 
 class GreenWaveResponse(BaseModel):
     recommended_speed_kmh: float
-    current_speed_kmh: float
+    current_speed_kmh: float | None
     route_distance_m: float
     target_arrival_in_sec: int
     next_light_green_in_sec: int
@@ -47,3 +55,16 @@ class GreenWaveResponse(BaseModel):
     target_light: TrafficLightInfo
     considered_lights: list[TrafficLightInfo]
     green_window: GreenWindow
+
+
+class RouteTrafficLightsSyncRequest(BaseModel):
+    source: str = Field(..., description="Source map provider or client module")
+    start: Coordinate
+    end: Coordinate
+    route_distance_m: float = Field(..., ge=0)
+    traffic_lights: list[SyncedTrafficLight] = Field(default_factory=list)
+
+
+class RouteTrafficLightsSyncResponse(BaseModel):
+    status: str
+    synced_count: int

@@ -9,6 +9,7 @@ from schemas import (
     GreenWaveRequest,
     GreenWaveResponse,
     GreenWindow,
+    RouteTrafficLightsSyncRequest,
     TrafficLightInfo,
 )
 
@@ -35,34 +36,46 @@ class GreenWaveCalculator:
             data_path = Path(__file__).resolve().parent.parent / "data" / "traffic_lights.json"
         self._traffic_lights = self._load_traffic_lights(data_path)
 
-    def calculate(self, payload: GreenWaveRequest) -> GreenWaveResponse:
+    def calculate(
+        self,
+        payload: GreenWaveRequest,
+        synced_route: RouteTrafficLightsSyncRequest | None = None,
+    ) -> GreenWaveResponse:
         if payload.min_speed_kmh > payload.max_speed_kmh:
             raise ValueError("min_speed_kmh must be less than or equal to max_speed_kmh")
 
-        route_distance_m = haversine_m(payload.start, payload.end)
+        synced_route_lights = self._find_synced_route_lights(payload, synced_route)
+        route_distance_m = (
+            synced_route.route_distance_m
+            if synced_route_lights and synced_route is not None
+            else haversine_m(payload.start, payload.end)
+        )
         if route_distance_m < 5:
             raise ValueError("Route is too short to calculate a green wave")
 
-        route_lights = self._find_route_lights(payload.start, payload.end)
+        route_lights = synced_route_lights or self._find_route_lights(payload.start, payload.end)
         if not route_lights:
             raise ValueError("No traffic lights found near the selected route")
 
         next_light, considered_lights = route_lights[0], route_lights
         now_sec = payload.current_time_sec if payload.current_time_sec is not None else seconds_since_midnight()
+        preferred_speed_kmh = clamp(45, payload.min_speed_kmh, payload.max_speed_kmh)
+        current_speed_kmh = payload.current_speed_kmh or preferred_speed_kmh
 
-        current_arrival_sec = route_time_sec(next_light["distance_from_start_m"], payload.current_speed_kmh)
+        current_arrival_sec = route_time_sec(next_light["distance_from_start_m"], current_speed_kmh)
         reachable_now = is_green_at_arrival(next_light["light"], now_sec + current_arrival_sec)
 
-        recommendation = self._find_speed_for_green_window(
-            distance_m=next_light["distance_from_start_m"],
+        recommendation = self._find_speed_for_route(
+            route_lights=considered_lights,
             now_sec=now_sec,
-            current_speed_kmh=payload.current_speed_kmh,
+            preferred_speed_kmh=preferred_speed_kmh,
             min_speed_kmh=payload.min_speed_kmh,
             max_speed_kmh=payload.max_speed_kmh,
-            light=next_light["light"],
         )
 
-        target_light = to_light_info(next_light)
+        target_route_light = recommendation["target_route_light"]
+        assert isinstance(target_route_light, dict)
+        target_light = to_light_info(target_route_light)
         considered = [to_light_info(light) for light in considered_lights]
 
         return GreenWaveResponse(
@@ -71,10 +84,14 @@ class GreenWaveCalculator:
             route_distance_m=round(route_distance_m, 1),
             target_arrival_in_sec=recommendation["arrival_in_sec"],
             next_light_green_in_sec=recommendation["green_window_start_in_sec"],
-            advice=build_advice(
-                current_speed_kmh=payload.current_speed_kmh,
-                recommended_speed_kmh=float(recommendation["speed_kmh"]),
-                green_wave_available=bool(recommendation["green_wave_available"]),
+            advice=(
+                "follow_recommendation"
+                if payload.current_speed_kmh is None
+                else build_advice(
+                    current_speed_kmh=payload.current_speed_kmh,
+                    recommended_speed_kmh=float(recommendation["speed_kmh"]),
+                    green_wave_available=bool(recommendation["green_wave_available"]),
+                )
             ),
             green_wave_available=bool(recommendation["green_wave_available"]),
             reachable_on_current_speed=reachable_now,
@@ -85,6 +102,82 @@ class GreenWaveCalculator:
                 end_in_sec=recommendation["green_window_end_in_sec"],
             ),
         )
+
+    def _find_speed_for_route(
+        self,
+        route_lights: list[dict[str, float | TrafficLight]],
+        now_sec: int,
+        preferred_speed_kmh: float,
+        min_speed_kmh: float,
+        max_speed_kmh: float,
+    ) -> dict[str, float | int | bool | dict[str, float | TrafficLight]]:
+        best_option: dict[str, float | int | bool | dict[str, float | TrafficLight]] | None = None
+        speed = min_speed_kmh
+
+        while speed <= max_speed_kmh + 0.001:
+            total_wait_sec = 0
+            green_count = 0
+            red_count = 0
+            first_blocking_light = route_lights[0]
+            first_blocking_wait_sec = 0
+            first_blocking_arrival_sec = route_time_sec(
+                float(first_blocking_light["distance_from_start_m"]),
+                speed,
+            )
+
+            for route_light in route_lights:
+                light = route_light["light"]
+                assert isinstance(light, TrafficLight)
+
+                arrival_sec = route_time_sec(float(route_light["distance_from_start_m"]), speed)
+                absolute_arrival_sec = now_sec + arrival_sec
+
+                if is_green_at_arrival(light, absolute_arrival_sec):
+                    green_count += 1
+                    continue
+
+                wait_sec = seconds_until_next_green(light, absolute_arrival_sec)
+                total_wait_sec += wait_sec
+                red_count += 1
+
+                if red_count == 1:
+                    first_blocking_light = route_light
+                    first_blocking_wait_sec = wait_sec
+                    first_blocking_arrival_sec = arrival_sec
+
+            option = {
+                "speed_kmh": speed,
+                "arrival_in_sec": first_blocking_arrival_sec,
+                "green_window_start_in_sec": first_blocking_wait_sec,
+                "green_window_end_in_sec": first_blocking_wait_sec
+                + get_light_from_route_light(first_blocking_light).green_duration_sec,
+                "green_wave_available": red_count == 0,
+                "green_count": green_count,
+                "red_count": red_count,
+                "speed_delta": abs(speed - preferred_speed_kmh),
+                "target_route_light": first_blocking_light,
+                "total_wait_sec": total_wait_sec,
+            }
+
+            if best_option is None:
+                best_option = option
+            elif (
+                int(option["red_count"]),
+                option["total_wait_sec"],
+                -int(option["green_count"]),
+                option["speed_delta"],
+            ) < (
+                int(best_option["red_count"]),
+                best_option["total_wait_sec"],
+                -int(best_option["green_count"]),
+                best_option["speed_delta"],
+            ):
+                best_option = option
+
+            speed += 1
+
+        assert best_option is not None
+        return best_option
 
     def _find_speed_for_green_window(
         self,
@@ -187,6 +280,39 @@ class GreenWaveCalculator:
         route_lights.sort(key=lambda item: float(item["distance_from_start_m"]))
         return route_lights
 
+    def _find_synced_route_lights(
+        self,
+        payload: GreenWaveRequest,
+        synced_route: RouteTrafficLightsSyncRequest | None,
+    ) -> list[dict[str, float | TrafficLight]]:
+        if synced_route is None:
+            return []
+
+        if (
+            haversine_m(payload.start, synced_route.start) > DEFAULT_ROUTE_CORRIDOR_M
+            or haversine_m(payload.end, synced_route.end) > DEFAULT_ROUTE_CORRIDOR_M
+        ):
+            return []
+
+        lights_by_id = {light.id: light for light in self._traffic_lights}
+        route_lights: list[dict[str, float | TrafficLight]] = []
+
+        for synced_light in synced_route.traffic_lights:
+            light = lights_by_id.get(synced_light.id)
+            if light is None:
+                continue
+
+            route_lights.append(
+                {
+                    "distance_from_start_m": synced_light.distance_from_start_m,
+                    "distance_to_route_m": 0,
+                    "light": light,
+                }
+            )
+
+        route_lights.sort(key=lambda item: float(item["distance_from_start_m"]))
+        return route_lights
+
     @staticmethod
     def _load_traffic_lights(data_path: Path) -> list[TrafficLight]:
         with data_path.open("r", encoding="utf-8") as file:
@@ -282,9 +408,25 @@ def is_green_at_arrival(light: TrafficLight, absolute_arrival_sec: int) -> bool:
     return light.green_start_sec <= phase <= green_end
 
 
-def to_light_info(route_light: dict[str, float | TrafficLight]) -> TrafficLightInfo:
+def seconds_until_next_green(light: TrafficLight, absolute_sec: int) -> int:
+    phase = absolute_sec % light.cycle_duration_sec
+
+    if is_green_at_arrival(light, absolute_sec):
+        return 0
+    if phase < light.green_start_sec:
+        return light.green_start_sec - phase
+
+    return light.cycle_duration_sec - phase + light.green_start_sec
+
+
+def get_light_from_route_light(route_light: dict[str, float | TrafficLight]) -> TrafficLight:
     light = route_light["light"]
     assert isinstance(light, TrafficLight)
+    return light
+
+
+def to_light_info(route_light: dict[str, float | TrafficLight]) -> TrafficLightInfo:
+    light = get_light_from_route_light(route_light)
     return TrafficLightInfo(
         id=light.id,
         name=light.name,
