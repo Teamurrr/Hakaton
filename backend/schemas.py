@@ -46,6 +46,10 @@ class GreenWindow(BaseModel):
 class GreenWaveResponse(BaseModel):
     recommended_speed_kmh: float
     current_speed_kmh: float | None
+    calculated_at_sec: int
+    departure_delay_sec: int
+    expected_stops_count: int
+    expected_wait_sec: int
     route_distance_m: float
     target_arrival_in_sec: int
     next_light_green_in_sec: int

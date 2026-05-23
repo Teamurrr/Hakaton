@@ -93,6 +93,19 @@ class GreenWaveCalculatorTests(unittest.TestCase):
         self.assertEqual([light.id for light in result.considered_lights], ["tl_103"])
         self.assertEqual(result.considered_lights[0].distance_from_start_m, 321)
 
+    def test_manas_corridor_can_find_stop_free_green_wave(self) -> None:
+        payload = GreenWaveRequest(
+            start=Coordinate(lon=74.5889, lat=42.8839),
+            end=Coordinate(lon=74.5866, lat=42.8537),
+            current_time_sec=120,
+        )
+
+        result = self.calculator.calculate(payload)
+
+        self.assertTrue(result.green_wave_available)
+        self.assertEqual(result.expected_stops_count, 0)
+        self.assertEqual(result.expected_wait_sec, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

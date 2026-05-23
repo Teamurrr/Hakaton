@@ -17,6 +17,8 @@ from schemas import (
 EARTH_RADIUS_M = 6_371_000
 DEFAULT_ROUTE_CORRIDOR_M = 80
 GREEN_WINDOW_SEARCH_CYCLES = 6
+GREEN_WAVE_START_SEARCH_SEC = 180
+GREEN_WAVE_SPEED_STEP_KMH = 0.5
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,10 @@ class GreenWaveCalculator:
         return GreenWaveResponse(
             recommended_speed_kmh=round(recommendation["speed_kmh"], 1),
             current_speed_kmh=payload.current_speed_kmh,
+            calculated_at_sec=now_sec,
+            departure_delay_sec=int(recommendation["departure_delay_sec"]),
+            expected_stops_count=int(recommendation["red_count"]),
+            expected_wait_sec=int(recommendation["total_wait_sec"]),
             route_distance_m=round(route_distance_m, 1),
             target_arrival_in_sec=recommendation["arrival_in_sec"],
             next_light_green_in_sec=recommendation["green_window_start_in_sec"],
@@ -115,69 +121,92 @@ class GreenWaveCalculator:
         speed = min_speed_kmh
 
         while speed <= max_speed_kmh + 0.001:
-            total_wait_sec = 0
-            green_count = 0
-            red_count = 0
-            first_blocking_light = route_lights[0]
-            first_blocking_wait_sec = 0
-            first_blocking_arrival_sec = route_time_sec(
-                float(first_blocking_light["distance_from_start_m"]),
-                speed,
-            )
+            for departure_delay_sec in range(GREEN_WAVE_START_SEARCH_SEC + 1):
+                option = self._score_speed_for_route(
+                    route_lights=route_lights,
+                    now_sec=now_sec,
+                    speed_kmh=speed,
+                    departure_delay_sec=departure_delay_sec,
+                    preferred_speed_kmh=preferred_speed_kmh,
+                )
 
-            for route_light in route_lights:
-                light = route_light["light"]
-                assert isinstance(light, TrafficLight)
+                if best_option is None or self._route_option_key(option) < self._route_option_key(
+                    best_option
+                ):
+                    best_option = option
 
-                arrival_sec = route_time_sec(float(route_light["distance_from_start_m"]), speed)
-                absolute_arrival_sec = now_sec + arrival_sec
+                if int(option["red_count"]) == 0 and departure_delay_sec == 0:
+                    break
 
-                if is_green_at_arrival(light, absolute_arrival_sec):
-                    green_count += 1
-                    continue
-
-                wait_sec = seconds_until_next_green(light, absolute_arrival_sec)
-                total_wait_sec += wait_sec
-                red_count += 1
-
-                if red_count == 1:
-                    first_blocking_light = route_light
-                    first_blocking_wait_sec = wait_sec
-                    first_blocking_arrival_sec = arrival_sec
-
-            option = {
-                "speed_kmh": speed,
-                "arrival_in_sec": first_blocking_arrival_sec,
-                "green_window_start_in_sec": first_blocking_wait_sec,
-                "green_window_end_in_sec": first_blocking_wait_sec
-                + get_light_from_route_light(first_blocking_light).green_duration_sec,
-                "green_wave_available": red_count == 0,
-                "green_count": green_count,
-                "red_count": red_count,
-                "speed_delta": abs(speed - preferred_speed_kmh),
-                "target_route_light": first_blocking_light,
-                "total_wait_sec": total_wait_sec,
-            }
-
-            if best_option is None:
-                best_option = option
-            elif (
-                int(option["red_count"]),
-                option["total_wait_sec"],
-                -int(option["green_count"]),
-                option["speed_delta"],
-            ) < (
-                int(best_option["red_count"]),
-                best_option["total_wait_sec"],
-                -int(best_option["green_count"]),
-                best_option["speed_delta"],
-            ):
-                best_option = option
-
-            speed += 1
+            speed += GREEN_WAVE_SPEED_STEP_KMH
 
         assert best_option is not None
         return best_option
+
+    def _score_speed_for_route(
+        self,
+        route_lights: list[dict[str, float | TrafficLight]],
+        now_sec: int,
+        speed_kmh: float,
+        departure_delay_sec: int,
+        preferred_speed_kmh: float,
+    ) -> dict[str, float | int | bool | dict[str, float | TrafficLight]]:
+        total_wait_sec = 0
+        green_count = 0
+        red_count = 0
+        first_blocking_light = route_lights[0]
+        first_blocking_wait_sec = 0
+        first_blocking_arrival_sec = route_time_sec(
+            float(first_blocking_light["distance_from_start_m"]),
+            speed_kmh,
+        )
+
+        for route_light in route_lights:
+            light = route_light["light"]
+            assert isinstance(light, TrafficLight)
+
+            arrival_sec = route_time_sec(float(route_light["distance_from_start_m"]), speed_kmh)
+            absolute_arrival_sec = now_sec + departure_delay_sec + arrival_sec
+
+            if is_green_at_arrival(light, absolute_arrival_sec):
+                green_count += 1
+                continue
+
+            wait_sec = seconds_until_next_green(light, absolute_arrival_sec)
+            total_wait_sec += wait_sec
+            red_count += 1
+
+            if red_count == 1:
+                first_blocking_light = route_light
+                first_blocking_wait_sec = wait_sec
+                first_blocking_arrival_sec = arrival_sec
+
+        return {
+            "speed_kmh": speed_kmh,
+            "arrival_in_sec": first_blocking_arrival_sec,
+            "departure_delay_sec": departure_delay_sec,
+            "green_window_start_in_sec": first_blocking_wait_sec,
+            "green_window_end_in_sec": first_blocking_wait_sec
+            + get_light_from_route_light(first_blocking_light).green_duration_sec,
+            "green_wave_available": red_count == 0,
+            "green_count": green_count,
+            "red_count": red_count,
+            "speed_delta": abs(speed_kmh - preferred_speed_kmh),
+            "target_route_light": first_blocking_light,
+            "total_wait_sec": total_wait_sec,
+        }
+
+    @staticmethod
+    def _route_option_key(
+        option: dict[str, float | int | bool | dict[str, float | TrafficLight]]
+    ) -> tuple[int, int, int, float, float]:
+        return (
+            int(option["red_count"]),
+            int(option["total_wait_sec"]),
+            int(option["departure_delay_sec"]),
+            float(option["speed_delta"]),
+            float(option["speed_kmh"]),
+        )
 
     def _find_speed_for_green_window(
         self,
