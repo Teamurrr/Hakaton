@@ -12,6 +12,7 @@ type MapStatus = 'loading' | 'ready' | 'error'
 type RouteStatus = 'idle' | 'building' | 'ready' | 'error'
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
 type RecommendationStatus = 'idle' | 'loading' | 'ready' | 'error'
+type GeolocationStatus = 'idle' | 'loading' | 'ready' | 'error' | 'unsupported'
 type SignalState = 'green' | 'red'
 
 type TrafficLightData = {
@@ -92,6 +93,7 @@ type YMapInstance = {
   events: YMapEvents
   geoObjects: YMapGeoObjects
   setBounds: (bounds: number[][], options?: object) => void
+  setCenter: (center: Coordinate, zoom?: number, options?: object) => void
 }
 
 type YPlacemark = {
@@ -161,6 +163,7 @@ declare global {
 type YandexMapProps = {
   animationVersion: number
   endPoint: Coordinate | null
+  focusPoint: Coordinate | null
   onBackendSyncStatusChange: (status: SyncStatus) => void
   onIntersectingLightsChange: (lights: RouteTrafficLight[]) => void
   onPointSelect: (mode: Exclude<SelectionMode, null>, coordinates: Coordinate) => void
@@ -704,6 +707,7 @@ function getCoordinateAtDistance(
 function YandexMap({
   animationVersion,
   endPoint,
+  focusPoint,
   onBackendSyncStatusChange,
   onIntersectingLightsChange,
   onPointSelect,
@@ -828,6 +832,16 @@ function YandexMap({
   useEffect(() => {
     selectionModeRef.current = selectionMode
   }, [selectionMode])
+
+  useEffect(() => {
+    const map = mapInstanceRef.current
+
+    if (!map || !focusPoint || mapStatus !== 'ready') {
+      return
+    }
+
+    map.setCenter(focusPoint, 16, { duration: 500 })
+  }, [focusPoint, mapStatus])
 
   useEffect(() => {
     onPointSelectRef.current = onPointSelect
@@ -1236,6 +1250,7 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
   const [currentSpeed, setCurrentSpeed] = useState('')
   const [startPoint, setStartPoint] = useState<Coordinate | null>(null)
   const [endPoint, setEndPoint] = useState<Coordinate | null>(null)
+  const [mapFocusPoint, setMapFocusPoint] = useState<Coordinate | null>(null)
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('start')
   const [routeStatus, setRouteStatus] = useState<RouteStatus>('idle')
   const [routeStats, setRouteStats] = useState<RouteStats | null>(null)
@@ -1243,6 +1258,8 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
   const [backendSyncStatus, setBackendSyncStatus] = useState<SyncStatus>('idle')
   const [recommendationStatus, setRecommendationStatus] = useState<RecommendationStatus>('idle')
   const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null)
+  const [geolocationStatus, setGeolocationStatus] = useState<GeolocationStatus>('idle')
+  const [geolocationAccuracyM, setGeolocationAccuracyM] = useState<number | null>(null)
   const [animationVersion, setAnimationVersion] = useState(0)
 
   const speedKmh = currentSpeed ? Number(currentSpeed) : null
@@ -1309,6 +1326,95 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
     setSelectionMode(null)
   }
 
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setGeolocationStatus('unsupported')
+      setGeolocationAccuracyM(null)
+      return
+    }
+
+    setGeolocationStatus('loading')
+    setGeolocationAccuracyM(null)
+
+    let bestPosition: GeolocationPosition | null = null
+    let settled = false
+    let watchId: number | null = null
+    let settleTimer: number | null = null
+
+    const clearWatch = () => {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId)
+        watchId = null
+      }
+
+      if (settleTimer !== null) {
+        window.clearTimeout(settleTimer)
+        settleTimer = null
+      }
+    }
+
+    const applyBestPosition = () => {
+      if (settled) {
+        return
+      }
+
+      if (!bestPosition) {
+        settled = true
+        clearWatch()
+        setGeolocationStatus('error')
+        return
+      }
+
+      settled = true
+      clearWatch()
+
+      const { coords } = bestPosition
+      const location = [coords.latitude, coords.longitude] satisfies Coordinate
+
+      setMapFocusPoint(location)
+      setStartPoint(location)
+      setEndPoint(null)
+      setSelectionMode('end')
+      setRouteStatus('idle')
+      setRouteStats(null)
+      setIntersectingLights([])
+      setRecommendation(null)
+      setRecommendationStatus('idle')
+      setBackendSyncStatus('idle')
+      setGeolocationAccuracyM(coords.accuracy)
+      setGeolocationStatus('ready')
+    }
+
+    watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        if (
+          !bestPosition ||
+          position.coords.accuracy < bestPosition.coords.accuracy
+        ) {
+          bestPosition = position
+        }
+
+        if (position.coords.accuracy <= 50) {
+          applyBestPosition()
+        }
+      },
+      () => {
+        if (!bestPosition) {
+          settled = true
+          clearWatch()
+          setGeolocationStatus('error')
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 12_000,
+      },
+    )
+
+    settleTimer = window.setTimeout(applyBestPosition, 8_000)
+  }
+
   const handleStartAnimation = () => {
     if (!hasValidSpeed || routeStatus !== 'ready') {
       return
@@ -1348,7 +1454,33 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
             >
               Выбрать точку B
             </button>
+
+            <button
+              className={`${styles.actionButton} ${styles.locationButton}`}
+              disabled={geolocationStatus === 'loading'}
+              onClick={handleUseCurrentLocation}
+              type="button"
+            >
+              {geolocationStatus === 'loading' ? 'Ищем местоположение...' : 'Мое местоположение'}
+            </button>
           </div>
+
+          {geolocationStatus === 'ready' && (
+            <p className={styles.helperText}>
+              Точка A установлена по лучшей найденной позиции
+              {geolocationAccuracyM !== null
+                ? `. Точность: примерно ${Math.round(geolocationAccuracyM)} м${
+                    geolocationAccuracyM > 500 ? ' (координаты могут быть неточными).' : '.'
+                  }`
+                : '.'}
+            </p>
+          )}
+          {geolocationStatus === 'error' && (
+            <p className={styles.helperText}>Не удалось получить местоположение. Проверьте доступ в браузере.</p>
+          )}
+          {geolocationStatus === 'unsupported' && (
+            <p className={styles.helperText}>Браузер не поддерживает геолокацию.</p>
+          )}
 
           <div className={styles.coordinateList}>
             <div>
@@ -1471,6 +1603,7 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
         <YandexMap
           animationVersion={animationVersion}
           endPoint={endPoint}
+          focusPoint={mapFocusPoint}
           onBackendSyncStatusChange={setBackendSyncStatus}
           onIntersectingLightsChange={setIntersectingLights}
           onPointSelect={handlePointSelect}

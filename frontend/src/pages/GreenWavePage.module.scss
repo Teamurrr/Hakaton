@@ -93,6 +93,10 @@
   box-shadow: 0 10px 20px rgba(22, 163, 74, 0.18);
 }
 
+.locationButton {
+  grid-column: 1 / -1;
+}
+
 .actionButton:disabled,
 .animateButton:disabled {
   opacity: 0.45;
