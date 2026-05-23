@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
-from Hakaton.backend.services.smart_traffic_service.app.application.controllers.traffic_controller import TrafficController
-from Hakaton.backend.services.smart_traffic_service.app.application.services.decision_maker import DecisionMaker
-from Hakaton.backend.services.smart_traffic_service.app.infrastructure.yolo.yolo_detector_adapter import YoloDetectorAdapter
-from Hakaton.backend.services.smart_traffic_service.app.presentation.api.v1.schemas.traffic_dto import SmartTrafficEventDTO, TrafficStateDTO
+from app.application.controllers.traffic_controller import TrafficController
+from app.application.services.decision_maker import DecisionMaker
+from app.infrastructure.yolo.yolo_detector_adapter import YoloDetectorAdapter
+from app.presentation.api.v1.schemas.traffic_dto import SmartTrafficEventDTO, TrafficStateDTO
 
 router = APIRouter(prefix="/smart-traffic", tags=["smart-traffic"])
 

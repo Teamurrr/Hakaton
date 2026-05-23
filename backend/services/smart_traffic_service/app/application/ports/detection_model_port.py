@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
-from Hakaton.backend.services.smart_traffic_service.app.domain.entities.detection import VehicleDetection
+from app.domain.entities.detection import VehicleDetection
 
 
 class DetectionModelPort(ABC):

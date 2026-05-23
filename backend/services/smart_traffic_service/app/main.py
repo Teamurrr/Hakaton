@@ -4,8 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from Hakaton.backend.services.smart_traffic_service.app.presentation.api.v1.routes.hls_monitoring import router as monitoring_router
-from Hakaton.backend.services.smart_traffic_service.app.presentation.ws.traffic_events_ws import router as traffic_ws_router
+from app.presentation.api.v1.routes.hls_monitoring import router as monitoring_router
+from app.presentation.ws.traffic_events_ws import router as traffic_ws_router
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_VIDEO_PATH = SERVICE_ROOT / "Road traffic video for object recognition.mp4"

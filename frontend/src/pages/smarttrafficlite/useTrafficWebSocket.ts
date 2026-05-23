@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { mergeStreetUpdates, parseTrafficMessage } from './trafficState'
 import type { TrafficSocketState } from './types'
@@ -10,61 +10,103 @@ export function useTrafficWebSocket(socketUrl = DEFAULT_SOCKET_URL): TrafficSock
     connectionStatus: 'connecting',
     streets: [],
   })
-
   const stableSocketUrl = useMemo(() => socketUrl.trim() || DEFAULT_SOCKET_URL, [socketUrl])
+  const reconnectTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
-    const socket = new WebSocket(stableSocketUrl)
+    let isDisposed = false
+    let socket: WebSocket | null = null
 
-    setState((current) => ({
-      ...current,
-      connectionStatus: 'connecting',
-      error: undefined,
-    }))
+    const clearReconnectTimer = () => {
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+    }
 
-    socket.addEventListener('open', () => {
+    const connect = () => {
+      if (isDisposed) {
+        return
+      }
+
+      socket = new WebSocket(stableSocketUrl)
+
       setState((current) => ({
         ...current,
-        connectionStatus: 'open',
+        connectionStatus: 'connecting',
         error: undefined,
       }))
-    })
 
-    socket.addEventListener('message', (event) => {
-      try {
-        const updates = parseTrafficMessage(String(event.data))
+      socket.addEventListener('open', () => {
+        if (isDisposed) {
+          return
+        }
 
         setState((current) => ({
           ...current,
-          streets: mergeStreetUpdates(current.streets, updates),
-          lastMessageAt: new Date().toISOString(),
+          connectionStatus: 'open',
           error: undefined,
         }))
-      } catch {
+      })
+
+      socket.addEventListener('message', (event) => {
+        if (isDisposed) {
+          return
+        }
+
+        try {
+          const updates = parseTrafficMessage(String(event.data))
+
+          setState((current) => ({
+            ...current,
+            streets: mergeStreetUpdates(current.streets, updates),
+            lastMessageAt: new Date().toISOString(),
+            error: undefined,
+          }))
+        } catch {
+          setState((current) => ({
+            ...current,
+            error: 'Не удалось прочитать JSON из WebSocket',
+          }))
+        }
+      })
+
+      socket.addEventListener('close', () => {
+        if (isDisposed) {
+          return
+        }
+
         setState((current) => ({
           ...current,
-          error: 'Не удалось прочитать JSON из WebSocket',
+          connectionStatus: 'closed',
         }))
-      }
-    })
 
-    socket.addEventListener('close', () => {
-      setState((current) => ({
-        ...current,
-        connectionStatus: 'closed',
-      }))
-    })
+        clearReconnectTimer()
+        reconnectTimerRef.current = window.setTimeout(connect, 1000)
+      })
 
-    socket.addEventListener('error', () => {
-      setState((current) => ({
-        ...current,
-        connectionStatus: 'error',
-        error: 'WebSocket недоступен',
-      }))
-    })
+      socket.addEventListener('error', () => {
+        if (isDisposed) {
+          return
+        }
+
+        setState((current) => ({
+          ...current,
+          connectionStatus: 'error',
+          error: 'WebSocket недоступен',
+        }))
+      })
+    }
+
+    connect()
 
     return () => {
-      socket.close()
+      isDisposed = true
+      clearReconnectTimer()
+
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close()
+      }
     }
   }, [stableSocketUrl])
 

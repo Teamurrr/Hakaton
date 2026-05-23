@@ -2,9 +2,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from Hakaton.backend.services.smart_traffic_service.app.domain.entities.detection import BoundingBox, VehicleDetection
-from Hakaton.backend.services.smart_traffic_service.app.domain.entities.traffic_state import TrafficState
-from Hakaton.backend.services.smart_traffic_service.app.domain.enums import PriorityStatus, VehicleType
+from app.domain.entities.detection import BoundingBox, VehicleDetection
+from app.domain.entities.traffic_state import TrafficState
+from app.domain.enums import PriorityStatus, VehicleType
 
 
 class BoundingBoxDTO(BaseModel):

@@ -3,12 +3,13 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from Hakaton.backend.services.smart_traffic_service.app.application.ports.detection_model_port import DetectionModelPort
-from Hakaton.backend.services.smart_traffic_service.app.domain.entities.detection import BoundingBox, VehicleDetection
-from Hakaton.backend.services.smart_traffic_service.app.domain.enums import VehicleType
+from app.application.ports.detection_model_port import DetectionModelPort
+from app.domain.entities.detection import BoundingBox, VehicleDetection
+from app.domain.enums import VehicleType
 
 
 logger = logging.getLogger(__name__)
+SAMPLE_VIDEO_ROUTE = "/smart-traffic/sample-video.mp4"
 
 
 class YoloDetectorAdapter(DetectionModelPort):
@@ -82,6 +83,19 @@ class YoloDetectorAdapter(DetectionModelPort):
             return candidate.resolve()
 
         service_root = Path(__file__).resolve().parents[3]
+        if video_path.startswith(("http://", "https://")):
+            from urllib.parse import urlparse, unquote
+
+            parsed = urlparse(video_path)
+            if parsed.path.endswith(SAMPLE_VIDEO_ROUTE):
+                return (service_root / "Road traffic video for object recognition.mp4").resolve()
+
+            local_name = Path(unquote(parsed.path)).name
+            if local_name:
+                local_candidate = service_root / local_name
+                if local_candidate.exists():
+                    return local_candidate.resolve()
+
         service_candidate = service_root / candidate
         if service_candidate.exists():
             return service_candidate.resolve()

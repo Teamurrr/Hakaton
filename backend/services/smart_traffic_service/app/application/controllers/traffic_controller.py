@@ -2,16 +2,18 @@ import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 from urllib.parse import urlparse, unquote
 
-from Hakaton.backend.services.smart_traffic_service.app.application.ports.detection_model_port import DetectionModelPort
-from Hakaton.backend.services.smart_traffic_service.app.application.services.decision_maker import DecisionMaker
-from Hakaton.backend.services.smart_traffic_service.app.domain.entities.traffic_state import TrafficState
+from app.application.ports.detection_model_port import DetectionModelPort
+from app.application.services.decision_maker import DecisionMaker
+from app.domain.entities.traffic_state import TrafficState
 
 
 SERVICE_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_VIDEO_PATH = SERVICE_ROOT / "Road traffic video for object recognition.mp4"
+SAMPLE_VIDEO_ROUTE = "/smart-traffic/sample-video.mp4"
+_STREAM_END = object()
 
 
 class TrafficController:
@@ -113,6 +115,9 @@ class TrafficController:
 
         parsed = urlparse(stream_url)
         if parsed.scheme in {"http", "https"}:
+            if parsed.path.endswith(SAMPLE_VIDEO_ROUTE):
+                return DEFAULT_VIDEO_PATH
+
             local_name = Path(unquote(parsed.path)).name
             if local_name:
                 local_candidate = SERVICE_ROOT / local_name
@@ -128,7 +133,13 @@ class TrafficController:
 
     async def process_video_stream(self, video_path: str) -> AsyncIterator[TrafficState]:
         """Imitate video stream processing and yield current traffic state."""
-        for frame_index, detections in enumerate(self.detector.detect_stream(video_path), start=1):
+        detections_iter = iter(self.detector.detect_stream(video_path))
+
+        for frame_index in range(1, 100_000_000):
+            detections = await asyncio.to_thread(self._next_detection_batch, detections_iter)
+            if detections is _STREAM_END:
+                break
+
             vehicle_count, priority_status, counts_by_type, green_seconds = self.decision_maker.decide(
                 detections
             )
@@ -145,3 +156,10 @@ class TrafficController:
             )
 
             await asyncio.sleep(self.frame_interval_seconds)
+
+    @staticmethod
+    def _next_detection_batch(detections_iter: Any):
+        try:
+            return next(detections_iter)
+        except StopIteration:
+            return _STREAM_END

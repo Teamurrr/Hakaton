@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from Hakaton.backend.services.smart_traffic_service.app.domain.enums import VehicleType
+from app.domain.enums import VehicleType
 
 
 @dataclass(frozen=True)

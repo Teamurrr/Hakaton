@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
-from Hakaton.backend.services.smart_traffic_service.app.presentation.ws.traffic_events_ws import get_traffic_controller
+from app.presentation.ws.traffic_events_ws import get_traffic_controller
 
 router = APIRouter(prefix="/smart-traffic", tags=["smart-traffic"])
 
