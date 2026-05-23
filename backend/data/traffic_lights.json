@@ -1,0 +1,38 @@
+[
+  {
+    "id": "tl_001",
+    "name": "Chui x Manas",
+    "lon": 74.5896,
+    "lat": 42.8765,
+    "cycle_duration_sec": 90,
+    "green_start_sec": 10,
+    "green_duration_sec": 35
+  },
+  {
+    "id": "tl_002",
+    "name": "Chui x Abdrahmanov",
+    "lon": 74.5982,
+    "lat": 42.8767,
+    "cycle_duration_sec": 100,
+    "green_start_sec": 20,
+    "green_duration_sec": 30
+  },
+  {
+    "id": "tl_003",
+    "name": "Chui x Ibraimov",
+    "lon": 74.6058,
+    "lat": 42.8769,
+    "cycle_duration_sec": 110,
+    "green_start_sec": 15,
+    "green_duration_sec": 40
+  },
+  {
+    "id": "tl_004",
+    "name": "Toktogul x Manas",
+    "lon": 74.5894,
+    "lat": 42.8724,
+    "cycle_duration_sec": 70,
+    "green_start_sec": 5,
+    "green_duration_sec": 25
+  }
+]
