@@ -33,6 +33,10 @@ type RouteStats = {
 
 type RecommendationResponse = {
   advice: string
+  calculated_at_sec: number
+  departure_delay_sec: number
+  expected_stops_count: number
+  expected_wait_sec: number
   green_wave_available: boolean
   next_light_green_in_sec: number
   recommended_speed_kmh: number
@@ -161,6 +165,8 @@ type YandexMapProps = {
   onIntersectingLightsChange: (lights: RouteTrafficLight[]) => void
   onPointSelect: (mode: Exclude<SelectionMode, null>, coordinates: Coordinate) => void
   onRouteStatsChange: (stats: RouteStats | null) => void
+  recommendedSpeedKmh: number | null
+  recommendedStartSec: number | null
   routeStatus: RouteStatus
   selectionMode: SelectionMode
   speedKmh: number | null
@@ -203,81 +209,81 @@ const TRAFFIC_LIGHTS: TrafficLightData[] = [
   },
   {
     coordinate: [42.8839485, 74.5889698],
-    cycleDurationSec: 88,
-    greenDurationSec: 28,
-    greenStartSec: 6,
+    cycleDurationSec: 120,
+    greenDurationSec: 36,
+    greenStartSec: 55,
     id: 'tl_101',
     name: 'Manas corridor signal 1',
   },
   {
     coordinate: [42.8816527, 74.5887747],
-    cycleDurationSec: 95,
-    greenDurationSec: 31,
-    greenStartSec: 17,
+    cycleDurationSec: 120,
+    greenDurationSec: 36,
+    greenStartSec: 75,
     id: 'tl_102',
     name: 'Manas corridor signal 2',
   },
   {
     coordinate: [42.8765928, 74.5882993],
-    cycleDurationSec: 90,
-    greenDurationSec: 27,
-    greenStartSec: 29,
+    cycleDurationSec: 120,
+    greenDurationSec: 36,
+    greenStartSec: 0,
     id: 'tl_103',
     name: 'Manas corridor signal 3',
   },
   {
     coordinate: [42.875304, 74.5882038],
-    cycleDurationSec: 97,
-    greenDurationSec: 30,
-    greenStartSec: 38,
+    cycleDurationSec: 120,
+    greenDurationSec: 36,
+    greenStartSec: 12,
     id: 'tl_104',
     name: 'Manas corridor signal 4',
   },
   {
     coordinate: [42.8728159, 74.5879442],
-    cycleDurationSec: 93,
-    greenDurationSec: 26,
-    greenStartSec: 14,
+    cycleDurationSec: 120,
+    greenDurationSec: 36,
+    greenStartSec: 34,
     id: 'tl_105',
     name: 'Manas corridor signal 5',
   },
   {
     coordinate: [42.8702613, 74.5877019],
-    cycleDurationSec: 99,
-    greenDurationSec: 29,
-    greenStartSec: 48,
+    cycleDurationSec: 120,
+    greenDurationSec: 36,
+    greenStartSec: 57,
     id: 'tl_106',
     name: 'Manas corridor signal 6',
   },
   {
     coordinate: [42.8677126, 74.5874127],
-    cycleDurationSec: 91,
-    greenDurationSec: 24,
-    greenStartSec: 22,
+    cycleDurationSec: 120,
+    greenDurationSec: 36,
+    greenStartSec: 79,
     id: 'tl_107',
     name: 'Manas corridor signal 7',
   },
   {
     coordinate: [42.8676451, 74.5891212],
-    cycleDurationSec: 104,
-    greenDurationSec: 32,
-    greenStartSec: 57,
+    cycleDurationSec: 120,
+    greenDurationSec: 36,
+    greenStartSec: 81,
     id: 'tl_108',
     name: 'Manas corridor signal 8',
   },
   {
     coordinate: [42.8575608, 74.5868326],
-    cycleDurationSec: 89,
-    greenDurationSec: 23,
-    greenStartSec: 11,
+    cycleDurationSec: 120,
+    greenDurationSec: 36,
+    greenStartSec: 50,
     id: 'tl_109',
     name: 'Manas corridor signal 9',
   },
   {
     coordinate: [42.8537022, 74.5866112],
-    cycleDurationSec: 102,
-    greenDurationSec: 28,
-    greenStartSec: 35,
+    cycleDurationSec: 120,
+    greenDurationSec: 36,
+    greenStartSec: 84,
     id: 'tl_110',
     name: 'Manas corridor signal 10',
   },
@@ -702,6 +708,8 @@ function YandexMap({
   onIntersectingLightsChange,
   onPointSelect,
   onRouteStatsChange,
+  recommendedSpeedKmh,
+  recommendedStartSec,
   routeStatus,
   selectionMode,
   speedKmh,
@@ -1135,7 +1143,13 @@ function YandexMap({
       return
     }
 
-    const simulationAbsoluteStartSec = currentSecondsSinceMidnight()
+    const shouldUseRecommendedPlan =
+      recommendedSpeedKmh !== null &&
+      recommendedStartSec !== null &&
+      Math.abs(speedKmh - recommendedSpeedKmh) <= 0.6
+    const simulationAbsoluteStartSec = shouldUseRecommendedPlan
+      ? recommendedStartSec
+      : currentSecondsSinceMidnight()
     const motionPlan = buildMotionPlan(
       totalDistance,
       routeTrafficLights,
@@ -1204,7 +1218,7 @@ function YandexMap({
         simulationTimeSec: 0,
       }
     }
-  }, [animationVersion, routeStatus, speedKmh])
+  }, [animationVersion, recommendedSpeedKmh, recommendedStartSec, routeStatus, speedKmh])
 
   return (
     <>
@@ -1235,6 +1249,10 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
   const hasValidSpeed = speedKmh !== null && Number.isFinite(speedKmh) && speedKmh > 0
   const estimatedDurationSec =
     hasValidSpeed && routeStats ? routeStats.distanceM / (speedKmh / 3.6) : null
+  const recommendedStartSec =
+    recommendation && recommendationStatus === 'ready'
+      ? (recommendation.calculated_at_sec + recommendation.departure_delay_sec) % 86_400
+      : null
 
   useEffect(() => {
     if (!startPoint || !endPoint || routeStatus !== 'ready') {
@@ -1356,7 +1374,7 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
           </strong>
           <p className={styles.helperText}>
             {recommendationStatus === 'ready' && recommendation
-              ? `${translateAdvice(recommendation.advice)}. Ближайший светофор: ${recommendation.target_light.name}.`
+              ? `${translateAdvice(recommendation.advice)}. Ожидаемых остановок: ${recommendation.expected_stops_count}.`
               : recommendationStatus === 'loading'
                 ? 'Запрашиваем расчет у backend...'
                 : recommendationStatus === 'error'
@@ -1408,7 +1426,7 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
           </strong>
           {recommendation && (
             <p className={styles.helperText}>
-              До следующего зеленого окна: {recommendation.next_light_green_in_sec} сек
+              Плановый старт через: {recommendation.departure_delay_sec} сек
             </p>
           )}
         </div>
@@ -1457,6 +1475,8 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
           onIntersectingLightsChange={setIntersectingLights}
           onPointSelect={handlePointSelect}
           onRouteStatsChange={setRouteStats}
+          recommendedSpeedKmh={recommendation?.recommended_speed_kmh ?? null}
+          recommendedStartSec={recommendedStartSec}
           routeStatus={routeStatus}
           selectionMode={selectionMode}
           setRouteStatus={setRouteStatus}

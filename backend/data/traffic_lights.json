@@ -40,89 +40,89 @@
     "name": "Manas corridor signal 1",
     "lon": 74.5889698,
     "lat": 42.8839485,
-    "cycle_duration_sec": 88,
-    "green_start_sec": 6,
-    "green_duration_sec": 28
+    "cycle_duration_sec": 120,
+    "green_start_sec": 55,
+    "green_duration_sec": 36
   },
   {
     "id": "tl_102",
     "name": "Manas corridor signal 2",
     "lon": 74.5887747,
     "lat": 42.8816527,
-    "cycle_duration_sec": 95,
-    "green_start_sec": 17,
-    "green_duration_sec": 31
+    "cycle_duration_sec": 120,
+    "green_start_sec": 75,
+    "green_duration_sec": 36
   },
   {
     "id": "tl_103",
     "name": "Manas corridor signal 3",
     "lon": 74.5882993,
     "lat": 42.8765928,
-    "cycle_duration_sec": 90,
-    "green_start_sec": 29,
-    "green_duration_sec": 27
+    "cycle_duration_sec": 120,
+    "green_start_sec": 0,
+    "green_duration_sec": 36
   },
   {
     "id": "tl_104",
     "name": "Manas corridor signal 4",
     "lon": 74.5882038,
     "lat": 42.875304,
-    "cycle_duration_sec": 97,
-    "green_start_sec": 38,
-    "green_duration_sec": 30
+    "cycle_duration_sec": 120,
+    "green_start_sec": 12,
+    "green_duration_sec": 36
   },
   {
     "id": "tl_105",
     "name": "Manas corridor signal 5",
     "lon": 74.5879442,
     "lat": 42.8728159,
-    "cycle_duration_sec": 93,
-    "green_start_sec": 14,
-    "green_duration_sec": 26
+    "cycle_duration_sec": 120,
+    "green_start_sec": 34,
+    "green_duration_sec": 36
   },
   {
     "id": "tl_106",
     "name": "Manas corridor signal 6",
     "lon": 74.5877019,
     "lat": 42.8702613,
-    "cycle_duration_sec": 99,
-    "green_start_sec": 48,
-    "green_duration_sec": 29
+    "cycle_duration_sec": 120,
+    "green_start_sec": 57,
+    "green_duration_sec": 36
   },
   {
     "id": "tl_107",
     "name": "Manas corridor signal 7",
     "lon": 74.5874127,
     "lat": 42.8677126,
-    "cycle_duration_sec": 91,
-    "green_start_sec": 22,
-    "green_duration_sec": 24
+    "cycle_duration_sec": 120,
+    "green_start_sec": 79,
+    "green_duration_sec": 36
   },
   {
     "id": "tl_108",
     "name": "Manas corridor signal 8",
     "lon": 74.5891212,
     "lat": 42.8676451,
-    "cycle_duration_sec": 104,
-    "green_start_sec": 57,
-    "green_duration_sec": 32
+    "cycle_duration_sec": 120,
+    "green_start_sec": 81,
+    "green_duration_sec": 36
   },
   {
     "id": "tl_109",
     "name": "Manas corridor signal 9",
     "lon": 74.5868326,
     "lat": 42.8575608,
-    "cycle_duration_sec": 89,
-    "green_start_sec": 11,
-    "green_duration_sec": 23
+    "cycle_duration_sec": 120,
+    "green_start_sec": 50,
+    "green_duration_sec": 36
   },
   {
     "id": "tl_110",
     "name": "Manas corridor signal 10",
     "lon": 74.5866112,
     "lat": 42.8537022,
-    "cycle_duration_sec": 102,
-    "green_start_sec": 35,
-    "green_duration_sec": 28
+    "cycle_duration_sec": 120,
+    "green_start_sec": 84,
+    "green_duration_sec": 36
   }
 ]
