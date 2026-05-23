@@ -1,0 +1,10 @@
+fastapi==0.136.1
+uvicorn==0.47.0
+websockets>=12.0
+pydantic==2.13.4
+
+# Optional runtime dependencies for real video inference.
+# Install when you are ready to connect the actual HLS/YOLOv8 pipeline:
+ultralytics>=8.0.0
+opencv-python>=4.8.0
+supervision>=0.20.0
