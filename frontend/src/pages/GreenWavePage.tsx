@@ -322,6 +322,19 @@ function translateAdvice(advice: string) {
   }
 }
 
+function getGeolocationErrorMessage(error: GeolocationPositionError) {
+  switch (error.code) {
+    case 1:
+      return 'Браузер запретил доступ к геолокации. Проверьте разрешение именно для этого сайта.'
+    case 2:
+      return 'Телефон не смог определить позицию. Включите GPS, Wi-Fi и мобильные данные, затем попробуйте еще раз.'
+    case 3:
+      return 'Телефон слишком долго определял позицию. Выйдите на открытое место или попробуйте еще раз.'
+    default:
+      return 'Не удалось получить местоположение. Проверьте доступ в браузере.'
+  }
+}
+
 function distanceBetweenCoordinates(start: Coordinate, end: Coordinate) {
   const earthRadiusM = 6_371_000
   const toRadians = (value: number) => (value * Math.PI) / 180
@@ -1260,6 +1273,7 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
   const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null)
   const [geolocationStatus, setGeolocationStatus] = useState<GeolocationStatus>('idle')
   const [geolocationAccuracyM, setGeolocationAccuracyM] = useState<number | null>(null)
+  const [geolocationErrorMessage, setGeolocationErrorMessage] = useState<string | null>(null)
   const [animationVersion, setAnimationVersion] = useState(0)
 
   const speedKmh = currentSpeed ? Number(currentSpeed) : null
@@ -1327,14 +1341,25 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
   }
 
   const handleUseCurrentLocation = () => {
+    if (!window.isSecureContext) {
+      setGeolocationStatus('error')
+      setGeolocationAccuracyM(null)
+      setGeolocationErrorMessage(
+        'Геолокация в браузере работает только через HTTPS или localhost. Если вы открыли сайт с телефона по http://IP:порт, телефон заблокирует местоположение.',
+      )
+      return
+    }
+
     if (!navigator.geolocation) {
       setGeolocationStatus('unsupported')
       setGeolocationAccuracyM(null)
+      setGeolocationErrorMessage(null)
       return
     }
 
     setGeolocationStatus('loading')
     setGeolocationAccuracyM(null)
+    setGeolocationErrorMessage(null)
 
     let bestPosition: GeolocationPosition | null = null
     let settled = false
@@ -1361,6 +1386,7 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
       if (!bestPosition) {
         settled = true
         clearWatch()
+        setGeolocationErrorMessage('Телефон не успел определить позицию. Попробуйте еще раз или включите GPS.')
         setGeolocationStatus('error')
         return
       }
@@ -1382,6 +1408,7 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
       setRecommendationStatus('idle')
       setBackendSyncStatus('idle')
       setGeolocationAccuracyM(coords.accuracy)
+      setGeolocationErrorMessage(null)
       setGeolocationStatus('ready')
     }
 
@@ -1398,10 +1425,11 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
           applyBestPosition()
         }
       },
-      () => {
+      (error) => {
         if (!bestPosition) {
           settled = true
           clearWatch()
+          setGeolocationErrorMessage(getGeolocationErrorMessage(error))
           setGeolocationStatus('error')
         }
       },
@@ -1476,7 +1504,9 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
             </p>
           )}
           {geolocationStatus === 'error' && (
-            <p className={styles.helperText}>Не удалось получить местоположение. Проверьте доступ в браузере.</p>
+            <p className={styles.helperText}>
+              {geolocationErrorMessage ?? 'Не удалось получить местоположение. Проверьте доступ в браузере.'}
+            </p>
           )}
           {geolocationStatus === 'unsupported' && (
             <p className={styles.helperText}>Браузер не поддерживает геолокацию.</p>
