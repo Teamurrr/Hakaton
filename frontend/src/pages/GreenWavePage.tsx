@@ -14,6 +14,8 @@ type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
 type RecommendationStatus = 'idle' | 'loading' | 'ready' | 'error'
 type GeolocationStatus = 'idle' | 'loading' | 'ready' | 'error' | 'unsupported'
 type SignalState = 'green' | 'red'
+type TrafficLayerStatus = 'idle' | 'enabled' | 'disabled' | 'unsupported' | 'error'
+type CongestionLevel = 'low' | 'medium' | 'high'
 
 type TrafficLightData = {
   coordinate: Coordinate
@@ -30,6 +32,21 @@ type RouteTrafficLight = TrafficLightData & {
 
 type RouteStats = {
   distanceM: number
+}
+
+type RouteTrafficSummary = {
+  baselineDurationSec: number
+  delayPercent: number
+  extraDelaySec: number
+  level: CongestionLevel
+  trafficAwareDurationSec: number
+}
+
+type TrafficOverlaySegment = {
+  color: string
+  coordinates: Coordinate[]
+  label: string
+  level: CongestionLevel
 }
 
 type RecommendationResponse = {
@@ -90,12 +107,22 @@ type YMapGeoObjects = {
   remove: (object: object) => void
 }
 
+type YMapControls = {
+  add: (control: object, options?: object) => void
+  remove: (control: object) => void
+}
+
 type YMapInstance = {
+  controls: YMapControls
   destroy: () => void
   events: YMapEvents
   geoObjects: YMapGeoObjects
   setBounds: (bounds: number[][], options?: object) => void
   setCenter: (center: Coordinate, zoom?: number, options?: object) => void
+}
+
+type YMapPropertyAccessor = {
+  get: (name: string) => unknown
 }
 
 type YPlacemark = {
@@ -111,6 +138,7 @@ type YRoutePath = {
   geometry: {
     getCoordinates: () => Coordinate[]
   }
+  properties?: YMapPropertyAccessor
 }
 
 type YRoute = {
@@ -122,6 +150,7 @@ type YRoute = {
   options?: {
     set: (options: object) => void
   }
+  properties?: YMapPropertyAccessor
 }
 
 type YPolyline = {
@@ -152,6 +181,12 @@ type YMapsApi = {
   ) => YMapInstance
   Placemark: new (coordinates: Coordinate, properties?: object, options?: object) => YPlacemark
   Polyline: new (coordinates: Coordinate[], properties?: object, options?: object) => YPolyline
+  control?: {
+    TrafficControl: new (state?: object) => {
+      getProvider?: (key: string) => { state: { set: (name: string, value: unknown) => void } }
+      state: { set: (name: string, value: unknown) => void }
+    }
+  }
   ready: (callback: () => void) => void
   route: (points: Coordinate[], params?: object) => PromiseLike<YRoute>
 }
@@ -168,12 +203,15 @@ type YandexMapProps = {
   focusPoint: Coordinate | null
   onBackendSyncStatusChange: (status: SyncStatus) => void
   onIntersectingLightsChange: (lights: RouteTrafficLight[]) => void
+  onOfficialTrafficStatusChange: (status: TrafficLayerStatus) => void
   onPointSelect: (mode: Exclude<SelectionMode, null>, coordinates: Coordinate) => void
   onRouteStatsChange: (stats: RouteStats | null) => void
+  onRouteTrafficSummaryChange: (summary: RouteTrafficSummary | null) => void
   recommendedSpeedKmh: number | null
   recommendedStartSec: number | null
   routeStatus: RouteStatus
   selectionMode: SelectionMode
+  showOfficialTraffic: boolean
   speedKmh: number | null
   startPoint: Coordinate | null
   setRouteStatus: (status: RouteStatus) => void
@@ -495,6 +533,212 @@ function getDistanceForSimulationTime(plan: MotionPlan, simulationTimeSec: numbe
   return lastSegment.kind === 'wait' ? lastSegment.distanceM : lastSegment.endDistanceM
 }
 
+function readNumericValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'value' in value &&
+    typeof value.value === 'number' &&
+    Number.isFinite(value.value)
+  ) {
+    return value.value
+  }
+
+  return null
+}
+
+function readProperty(properties: YMapPropertyAccessor | undefined, name: string) {
+  if (!properties) {
+    return null
+  }
+
+  try {
+    return properties.get(name)
+  } catch {
+    return null
+  }
+}
+
+function extractRouteDurationSec(route: YRoute) {
+  const routeLevelDuration = readNumericValue(readProperty(route.properties, 'duration'))
+  if (routeLevelDuration !== null) {
+    return routeLevelDuration
+  }
+
+  const paths = route.getPaths()
+  let totalDurationSec = 0
+
+  for (let pathIndex = 0; pathIndex < paths.getLength(); pathIndex += 1) {
+    const pathDurationSec = readNumericValue(readProperty(paths.get(pathIndex).properties, 'duration'))
+
+    if (pathDurationSec === null) {
+      return null
+    }
+
+    totalDurationSec += pathDurationSec
+  }
+
+  return totalDurationSec > 0 ? totalDurationSec : null
+}
+
+function formatDurationLabel(totalSeconds: number) {
+  const roundedSeconds = Math.max(0, Math.round(totalSeconds))
+  const hours = Math.floor(roundedSeconds / 3600)
+  const minutes = Math.floor((roundedSeconds % 3600) / 60)
+  const seconds = roundedSeconds % 60
+
+  if (hours > 0) {
+    return `${hours} ч ${minutes} мин`
+  }
+
+  if (minutes > 0) {
+    return `${minutes} мин ${seconds} сек`
+  }
+
+  return `${seconds} сек`
+}
+
+function buildRouteTrafficSummary(
+  trafficAwareDurationSec: number,
+  baselineDurationSec: number,
+): RouteTrafficSummary {
+  const extraDelaySec = Math.max(0, trafficAwareDurationSec - baselineDurationSec)
+  const delayPercent =
+    baselineDurationSec > 0 ? Math.round((extraDelaySec / baselineDurationSec) * 100) : 0
+
+  let level: CongestionLevel = 'low'
+  if (delayPercent >= 20 || extraDelaySec >= 300) {
+    level = 'high'
+  } else if (delayPercent >= 8 || extraDelaySec >= 120) {
+    level = 'medium'
+  }
+
+  return {
+    baselineDurationSec,
+    delayPercent,
+    extraDelaySec,
+    level,
+    trafficAwareDurationSec,
+  }
+}
+
+function getDistanceToRoute(point: Coordinate, routeCoordinates: Coordinate[]) {
+  if (routeCoordinates.length < 2) {
+    return Number.POSITIVE_INFINITY
+  }
+
+  let bestDistanceM = Number.POSITIVE_INFINITY
+
+  for (let index = 1; index < routeCoordinates.length; index += 1) {
+    const segmentStart = routeCoordinates[index - 1]
+    const segmentEnd = routeCoordinates[index]
+    const projection = projectPointOnSegment(segmentStart, segmentEnd, point)
+    bestDistanceM = Math.min(bestDistanceM, projection.distanceM)
+  }
+
+  return bestDistanceM
+}
+
+function getCoordinatesSliceByDistance(
+  coordinates: Coordinate[],
+  distances: number[],
+  startDistance: number,
+  endDistance: number,
+) {
+  const startCoordinate = getCoordinateAtDistance(coordinates, distances, startDistance)
+  const endCoordinate = getCoordinateAtDistance(coordinates, distances, endDistance)
+
+  if (!startCoordinate || !endCoordinate) {
+    return []
+  }
+
+  const chunk: Coordinate[] = [startCoordinate]
+
+  for (let index = 1; index < coordinates.length - 1; index += 1) {
+    if (distances[index] <= startDistance || distances[index] >= endDistance) {
+      continue
+    }
+
+    chunk.push(coordinates[index])
+  }
+
+  chunk.push(endCoordinate)
+  return chunk
+}
+
+function buildTrafficOverlaySegments(
+  baselineCoordinates: Coordinate[],
+  trafficAwareCoordinates: Coordinate[],
+  summary: RouteTrafficSummary,
+) {
+  if (baselineCoordinates.length < 2 || trafficAwareCoordinates.length < 2) {
+    return []
+  }
+
+  const baselineDistances = buildDistanceTable(baselineCoordinates)
+  const totalDistance = baselineDistances[baselineDistances.length - 1] ?? 0
+
+  if (totalDistance <= 0) {
+    return []
+  }
+
+  const segmentCount = Math.min(7, Math.max(3, Math.round(totalDistance / 700)))
+  const segments: TrafficOverlaySegment[] = []
+
+  for (let index = 0; index < segmentCount; index += 1) {
+    const startDistance = (totalDistance / segmentCount) * index
+    const endDistance = (totalDistance / segmentCount) * (index + 1)
+    const middleCoordinate = getCoordinateAtDistance(
+      baselineCoordinates,
+      baselineDistances,
+      (startDistance + endDistance) / 2,
+    )
+
+    if (!middleCoordinate) {
+      continue
+    }
+
+    const divergenceDistanceM = getDistanceToRoute(middleCoordinate, trafficAwareCoordinates)
+    let level: CongestionLevel = 'low'
+
+    if (divergenceDistanceM >= 180 || summary.delayPercent >= 20) {
+      level = 'high'
+    } else if (divergenceDistanceM >= 60 || summary.delayPercent >= 8) {
+      level = 'medium'
+    }
+
+    if (summary.delayPercent < 5 && divergenceDistanceM < 60) {
+      level = 'low'
+    }
+
+    const color =
+      level === 'high' ? '#ef4444' : level === 'medium' ? '#f59e0b' : '#22c55e'
+
+    segments.push({
+      color,
+      coordinates: getCoordinatesSliceByDistance(
+        baselineCoordinates,
+        baselineDistances,
+        startDistance,
+        endDistance,
+      ),
+      label:
+        level === 'high'
+          ? 'Сильная загрузка'
+          : level === 'medium'
+            ? 'Плотное движение'
+            : 'Свободный участок',
+      level,
+    })
+  }
+
+  return segments.filter((segment) => segment.coordinates.length >= 2)
+}
+
 async function fetchRoadRoute(start: Coordinate, end: Coordinate): Promise<RoadRouteData> {
   const response = await fetch(
     `https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`,
@@ -725,12 +969,15 @@ function YandexMap({
   focusPoint,
   onBackendSyncStatusChange,
   onIntersectingLightsChange,
+  onOfficialTrafficStatusChange,
   onPointSelect,
   onRouteStatsChange,
+  onRouteTrafficSummaryChange,
   recommendedSpeedKmh,
   recommendedStartSec,
   routeStatus,
   selectionMode,
+  showOfficialTraffic,
   speedKmh,
   startPoint,
   setRouteStatus,
@@ -742,6 +989,11 @@ function YandexMap({
   const startPlacemarkRef = useRef<YPlacemark | null>(null)
   const endPlacemarkRef = useRef<YPlacemark | null>(null)
   const carPlacemarkRef = useRef<YPlacemark | null>(null)
+  const trafficOverlayRefs = useRef<YPolyline[]>([])
+  const trafficControlRef = useRef<{
+    getProvider?: (key: string) => { state: { set: (name: string, value: unknown) => void } }
+    state: { set: (name: string, value: unknown) => void }
+  } | null>(null)
   const trafficLightPlacemarkRefs = useRef<Record<string, YPlacemark>>({})
   const routeTrafficLightsRef = useRef<RouteTrafficLight[]>([])
   const animationFrameRef = useRef<number | null>(null)
@@ -791,6 +1043,82 @@ function YandexMap({
     updateTrafficLightColors(currentSecondsSinceMidnight())
 
     return intersectingLights
+  }
+
+  const clearTrafficOverlay = () => {
+    const map = mapInstanceRef.current
+
+    if (!map) {
+      trafficOverlayRefs.current = []
+      return
+    }
+
+    trafficOverlayRefs.current.forEach((segment) => {
+      map.geoObjects.remove(segment)
+    })
+    trafficOverlayRefs.current = []
+  }
+
+  const renderTrafficOverlay = (
+    baselineCoordinates: Coordinate[],
+    trafficAwareCoordinates: Coordinate[],
+    summary: RouteTrafficSummary,
+  ) => {
+    const map = mapInstanceRef.current
+    const ymaps = window.ymaps
+
+    if (!map || !ymaps) {
+      return
+    }
+
+    clearTrafficOverlay()
+
+    const overlaySegments = buildTrafficOverlaySegments(
+      baselineCoordinates,
+      trafficAwareCoordinates,
+      summary,
+    )
+
+    trafficOverlayRefs.current = overlaySegments.map((segment) => {
+      const polyline = new ymaps.Polyline(
+        segment.coordinates,
+        {
+          balloonContent: segment.label,
+          hintContent: segment.label,
+        },
+        {
+          opacity: 0.95,
+          strokeColor: segment.color,
+          strokeStyle: 'dash',
+          strokeWidth: segment.level === 'high' ? 7 : 6,
+          zIndex: 4,
+        },
+      )
+
+      map.geoObjects.add(polyline)
+      return polyline
+    })
+  }
+
+  const syncOfficialTrafficState = () => {
+    const trafficControl = trafficControlRef.current
+
+    if (!trafficControl) {
+      onOfficialTrafficStatusChange('unsupported')
+      return
+    }
+
+    try {
+      trafficControl.state.set('trafficShown', showOfficialTraffic)
+
+      if (showOfficialTraffic) {
+        trafficControl.getProvider?.('traffic#actual')?.state.set('infoLayerShown', true)
+      }
+
+      onOfficialTrafficStatusChange(showOfficialTraffic ? 'enabled' : 'disabled')
+    } catch {
+      onOfficialTrafficStatusChange('error')
+    }
   }
 
   const createPolylineRoute = (routeData: RoadRouteData) => {
@@ -859,6 +1187,14 @@ function YandexMap({
   }, [focusPoint, mapStatus])
 
   useEffect(() => {
+    if (mapStatus !== 'ready') {
+      return
+    }
+
+    syncOfficialTrafficState()
+  }, [mapStatus, showOfficialTraffic])
+
+  useEffect(() => {
     onPointSelectRef.current = onPointSelect
   }, [onPointSelect])
 
@@ -900,6 +1236,33 @@ function YandexMap({
           controls: ['zoomControl', 'fullscreenControl'],
           zoom: 12,
         })
+
+        if (window.ymaps.control?.TrafficControl) {
+          try {
+            trafficControlRef.current = new window.ymaps.control.TrafficControl({
+              state: {
+                providerKey: 'traffic#actual',
+                trafficShown: showOfficialTraffic,
+              },
+            })
+            map.controls.add(trafficControlRef.current, {
+              float: 'right',
+            })
+
+            if (showOfficialTraffic) {
+              trafficControlRef.current
+                .getProvider?.('traffic#actual')
+                ?.state.set('infoLayerShown', true)
+            }
+
+            onOfficialTrafficStatusChange(showOfficialTraffic ? 'enabled' : 'disabled')
+          } catch {
+            trafficControlRef.current = null
+            onOfficialTrafficStatusChange('error')
+          }
+        } else {
+          onOfficialTrafficStatusChange('unsupported')
+        }
 
         trafficLightPlacemarkRefs.current = Object.fromEntries(
           TRAFFIC_LIGHTS.map((light) => {
@@ -959,6 +1322,13 @@ function YandexMap({
       }
 
       if (mapInstanceRef.current) {
+        clearTrafficOverlay()
+
+        if (trafficControlRef.current) {
+          mapInstanceRef.current.controls.remove(trafficControlRef.current)
+          trafficControlRef.current = null
+        }
+
         mapInstanceRef.current.events.remove('click', handleMapClick)
         mapInstanceRef.current.destroy()
         mapInstanceRef.current = null
@@ -1043,8 +1413,10 @@ function YandexMap({
     routeCoordinatesRef.current = []
     routeDistancesRef.current = []
     routeTrafficLightsRef.current = []
+    clearTrafficOverlay()
     onRouteStatsChange(null)
     onIntersectingLightsChange([])
+    onRouteTrafficSummaryChange(null)
     onBackendSyncStatusChange('idle')
     updateTrafficLightColors(currentSecondsSinceMidnight())
 
@@ -1061,6 +1433,7 @@ function YandexMap({
     setRouteStatus('building')
 
     ymaps.route([startPoint, endPoint], {
+      avoidTrafficJams: true,
       mapStateAutoApply: true,
       routingMode: 'auto',
     }).then(
@@ -1097,6 +1470,41 @@ function YandexMap({
         map.setBounds(route.getBounds(), { checkZoomRange: true })
         setRouteStatus('ready')
 
+        void ymaps
+          .route([startPoint, endPoint], {
+            avoidTrafficJams: false,
+            mapStateAutoApply: false,
+            routingMode: 'auto',
+          })
+          .then((baselineRoute) => {
+            const trafficAwareCoordinates = buildRouteCoordinates(route)
+            const baselineCoordinates = buildRouteCoordinates(baselineRoute)
+            const trafficAwareDurationSec = extractRouteDurationSec(route)
+            const baselineDurationSec = extractRouteDurationSec(baselineRoute)
+
+            if (
+              trafficAwareCoordinates.length < 2 ||
+              baselineCoordinates.length < 2 ||
+              trafficAwareDurationSec === null ||
+              baselineDurationSec === null
+            ) {
+              onRouteTrafficSummaryChange(null)
+              clearTrafficOverlay()
+              return
+            }
+
+            const summary = buildRouteTrafficSummary(
+              trafficAwareDurationSec,
+              baselineDurationSec,
+            )
+
+            onRouteTrafficSummaryChange(summary)
+            renderTrafficOverlay(baselineCoordinates, trafficAwareCoordinates, summary)
+          }, () => {
+            onRouteTrafficSummaryChange(null)
+            clearTrafficOverlay()
+          })
+
         void syncTrafficLightsToBackend(
           routeCoordinates[0] ?? startPoint,
           routeCoordinates[routeCoordinates.length - 1] ?? endPoint,
@@ -1109,6 +1517,8 @@ function YandexMap({
       async () => {
         try {
           const roadRoute = await fetchRoadRoute(startPoint, endPoint)
+          onRouteTrafficSummaryChange(null)
+          clearTrafficOverlay()
           createPolylineRoute(roadRoute)
         } catch {
           setRouteStatus('error')
@@ -1119,6 +1529,7 @@ function YandexMap({
     endPoint,
     onBackendSyncStatusChange,
     onIntersectingLightsChange,
+    onRouteTrafficSummaryChange,
     onRouteStatsChange,
     setRouteStatus,
     startPoint,
@@ -1277,6 +1688,9 @@ function GreenWavePage({ onBack, onHome, onOpenScenarios }: GreenWavePageProps) 
   const [geolocationAccuracyM, setGeolocationAccuracyM] = useState<number | null>(null)
   const [geolocationErrorMessage, setGeolocationErrorMessage] = useState<string | null>(null)
   const [animationVersion, setAnimationVersion] = useState(0)
+  const [showOfficialTraffic, setShowOfficialTraffic] = useState(true)
+  const [officialTrafficStatus, setOfficialTrafficStatus] = useState<TrafficLayerStatus>('idle')
+  const [routeTrafficSummary, setRouteTrafficSummary] = useState<RouteTrafficSummary | null>(null)
 
   const speedKmh = currentSpeed ? Number(currentSpeed) : null
   const hasValidSpeed = speedKmh !== null && Number.isFinite(speedKmh) && speedKmh > 0
@@ -1286,6 +1700,24 @@ function GreenWavePage({ onBack, onHome, onOpenScenarios }: GreenWavePageProps) 
     recommendation && recommendationStatus === 'ready'
       ? (recommendation.calculated_at_sec + recommendation.departure_delay_sec) % 86_400
       : null
+  const routeTrafficLevelLabel =
+    routeTrafficSummary?.level === 'high'
+      ? 'Сильные пробки'
+      : routeTrafficSummary?.level === 'medium'
+        ? 'Плотный поток'
+        : routeTrafficSummary
+          ? 'Маршрут свободнее'
+          : 'Нет данных'
+  const officialTrafficStatusLabel =
+    officialTrafficStatus === 'enabled'
+      ? 'Слой Яндекса включен'
+      : officialTrafficStatus === 'disabled'
+        ? 'Слой Яндекса выключен'
+        : officialTrafficStatus === 'unsupported'
+          ? 'Слой пробок недоступен в этой конфигурации'
+          : officialTrafficStatus === 'error'
+            ? 'Не удалось включить слой пробок'
+            : 'Подключаем слой пробок'
 
   useEffect(() => {
     if (!startPoint || !endPoint || routeStatus !== 'ready') {
@@ -1333,6 +1765,7 @@ function GreenWavePage({ onBack, onHome, onOpenScenarios }: GreenWavePageProps) 
       setRouteStatus('idle')
       setRouteStats(null)
       setIntersectingLights([])
+      setRouteTrafficSummary(null)
       setRecommendation(null)
       setRecommendationStatus('idle')
       return
@@ -1406,6 +1839,7 @@ function GreenWavePage({ onBack, onHome, onOpenScenarios }: GreenWavePageProps) 
       setRouteStatus('idle')
       setRouteStats(null)
       setIntersectingLights([])
+      setRouteTrafficSummary(null)
       setRecommendation(null)
       setRecommendationStatus('idle')
       setBackendSyncStatus('idle')
@@ -1631,6 +2065,42 @@ function GreenWavePage({ onBack, onHome, onOpenScenarios }: GreenWavePageProps) 
           )}
         </div>
 
+        <div className={styles.metricCard}>
+          <span className={styles.metricLabel}>Пробки Яндекса</span>
+          <button
+            className={showOfficialTraffic ? styles.actionButtonActive : styles.actionButton}
+            onClick={() => setShowOfficialTraffic((value) => !value)}
+            type="button"
+          >
+            {showOfficialTraffic ? 'Скрыть официальный слой' : 'Показать официальный слой'}
+          </button>
+          <p className={styles.helperText}>{officialTrafficStatusLabel}</p>
+        </div>
+
+        <div className={styles.metricCard}>
+          <span className={styles.metricLabel}>Пробки на маршруте</span>
+          <strong className={styles.metricValueSmall}>{routeTrafficLevelLabel}</strong>
+          {routeTrafficSummary ? (
+            <>
+              <p className={styles.helperText}>
+                Базовый путь: {formatDurationLabel(routeTrafficSummary.baselineDurationSec)}
+              </p>
+              <p className={styles.helperText}>
+                С учетом пробок: {formatDurationLabel(routeTrafficSummary.trafficAwareDurationSec)}
+              </p>
+              <p className={styles.helperText}>
+                Задержка: {formatDurationLabel(routeTrafficSummary.extraDelaySec)} ·{' '}
+                {routeTrafficSummary.delayPercent}%
+              </p>
+            </>
+          ) : (
+            <p className={styles.helperText}>
+              После построения маршрута покажем разницу между обычным путем и маршрутом с учетом
+              текущей дорожной ситуации.
+            </p>
+          )}
+        </div>
+
         <div className={styles.statusCard} aria-live="polite">
           <span className={styles.metricLabel}>Статус</span>
           <strong className={styles.statusValue}>
@@ -1655,13 +2125,16 @@ function GreenWavePage({ onBack, onHome, onOpenScenarios }: GreenWavePageProps) 
           focusPoint={mapFocusPoint}
           onBackendSyncStatusChange={setBackendSyncStatus}
           onIntersectingLightsChange={setIntersectingLights}
+          onOfficialTrafficStatusChange={setOfficialTrafficStatus}
           onPointSelect={handlePointSelect}
           onRouteStatsChange={setRouteStats}
+          onRouteTrafficSummaryChange={setRouteTrafficSummary}
           recommendedSpeedKmh={recommendation?.recommended_speed_kmh ?? null}
           recommendedStartSec={recommendedStartSec}
           routeStatus={routeStatus}
           selectionMode={selectionMode}
           setRouteStatus={setRouteStatus}
+          showOfficialTraffic={showOfficialTraffic}
           speedKmh={hasValidSpeed ? speedKmh : null}
           startPoint={startPoint}
         />
