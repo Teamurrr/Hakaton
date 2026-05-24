@@ -580,18 +580,111 @@
 }
 
 .site-footer {
-  margin-top: 28px;
+  margin-top: 40px;
+  padding: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(8, 15, 28, 0.92), rgba(8, 15, 28, 0.72)),
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 38%);
+  box-shadow: 0 28px 54px rgba(2, 6, 23, 0.24);
+}
+
+.site-footer__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(220px, 0.8fr));
+  gap: 24px;
+}
+
+.site-footer__brand-block,
+.site-footer__nav-block,
+.site-footer__meta-block {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.site-footer__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #f8fbff;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.site-footer__copy,
+.site-footer__meta {
+  margin: 0;
+  color: rgba(219, 234, 254, 0.76);
+  line-height: 1.7;
+}
+
+.site-footer__title {
+  color: #7dd3fc;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.site-footer__links {
+  display: grid;
+  gap: 10px;
+}
+
+.site-footer__link {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  color: #e0f2fe;
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.site-footer__link:hover {
+  color: #7dd3fc;
+  transform: translateX(2px);
+}
+
+.site-footer__badge {
+  width: fit-content;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  border-radius: 999px;
+  color: #dbeafe;
+  background: rgba(37, 99, 235, 0.16);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+}
+
+.site-footer__bottom {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  color: rgba(219, 234, 254, 0.72);
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  color: rgba(219, 234, 254, 0.64);
   font-size: 13px;
-}
-
-.footer-links {
-  display: flex;
-  gap: 12px;
 }
 
 .banner-card {
@@ -665,7 +758,13 @@
   }
 
   .site-footer {
-    align-items: flex-start;
+    padding: 22px;
+  }
+
+  .site-footer__grid,
+  .site-footer__bottom {
+    grid-template-columns: 1fr;
     flex-direction: column;
+    align-items: flex-start;
   }
 }

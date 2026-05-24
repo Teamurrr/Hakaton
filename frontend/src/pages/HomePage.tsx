@@ -1,5 +1,6 @@
 import FeatureCard from '../components/FeatureCard'
 import Hero from '../components/Hero'
+import SiteFooter from '../components/SiteFooter'
 
 type HomePageProps = {
   onHome: () => void
@@ -11,17 +12,20 @@ const features = [
   {
     eyebrow: 'Данные',
     title: 'Аналитика движения',
-    description: 'Собирайте данные по светофорам, фазам и трафику в одном понятном React-интерфейсе.',
+    description:
+      'Собирайте данные по светофорам, фазам и трафику в одном понятном React-интерфейсе.',
   },
   {
     eyebrow: 'Алгоритм',
     title: 'Синхронизация волны',
-    description: 'Управляйте маршрутами и запускайте зелёную волну с минимальной задержкой на перекрёстках.',
+    description:
+      'Управляйте маршрутами и запускайте зелёную волну с минимальной задержкой на перекрёстках.',
   },
   {
     eyebrow: 'Интеграции',
     title: 'Камеры и наблюдение',
-    description: 'Подключайте видеопотоки, считывайте поток машин и принимайте решения по состоянию улицы.',
+    description:
+      'Подключайте видеопотоки, считывайте поток машин и принимайте решения по состоянию улицы.',
   },
 ]
 
@@ -50,7 +54,9 @@ function HomePage({ onHome, onOpenGreenWave, onOpenScenarios }: HomePageProps) {
         <section className="features-section" aria-labelledby="features-title">
           <div className="section-heading">
             <p className="section-kicker">Что умеет система</p>
-            <h2 id="features-title">Понятный экран для работы с потоком, светофорами и отчетами</h2>
+            <h2 id="features-title">
+              Понятный экран для работы с потоком, светофорами и отчетами
+            </h2>
           </div>
 
           <div className="feature-grid">
@@ -62,9 +68,11 @@ function HomePage({ onHome, onOpenGreenWave, onOpenScenarios }: HomePageProps) {
           </div>
         </section>
 
-        <footer className="site-footer">
-          <div>© {new Date().getFullYear()} Smart Traffic</div>
-        </footer>
+        <SiteFooter
+          onHome={onHome}
+          onOpenGreenWave={onOpenGreenWave}
+          onOpenScenarios={onOpenScenarios}
+        />
       </section>
     </main>
   )

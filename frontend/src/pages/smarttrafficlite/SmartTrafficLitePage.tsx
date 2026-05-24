@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 
+import SiteFooter from '../../components/SiteFooter'
 import './smarttrafficlite.css'
 
 type SmartTrafficLitePageProps = {
@@ -443,6 +444,14 @@ export function SmartTrafficLitePage({
           ) : null}
         </section>
       </section>
+
+      <div className="container">
+        <SiteFooter
+          onHome={onHome}
+          onOpenGreenWave={onOpenGreenWave}
+          onOpenScenarios={onOpenScenarios}
+        />
+      </div>
     </main>
   )
 }
