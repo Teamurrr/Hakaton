@@ -70,6 +70,8 @@ type MotionPlan = {
 
 type GreenWavePageProps = {
   onBack: () => void
+  onHome: () => void
+  onOpenScenarios: () => void
 }
 
 type PointSelectEvent = {
@@ -1259,7 +1261,7 @@ function YandexMap({
   )
 }
 
-function GreenWavePage({ onBack }: GreenWavePageProps) {
+function GreenWavePage({ onBack, onHome, onOpenScenarios }: GreenWavePageProps) {
   const [currentSpeed, setCurrentSpeed] = useState('')
   const [startPoint, setStartPoint] = useState<Coordinate | null>(null)
   const [endPoint, setEndPoint] = useState<Coordinate | null>(null)
@@ -1452,7 +1454,24 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
   }
 
   return (
-    <section className={styles.mapPage} aria-label="Зеленая волна">
+    <>
+      <header className="topbar">
+        <button className="brand" onClick={onHome} type="button">
+          <span className="brand-mark" aria-hidden="true" />
+          <span>Smart Traffic</span>
+        </button>
+
+        <nav className="nav-actions" aria-label="Основная навигация">
+          <button className="nav-button" onClick={onOpenScenarios} type="button">
+            Умный светофор
+          </button>
+          <button className="nav-button nav-button-primary" onClick={onBack} type="button">
+            Назад
+          </button>
+        </nav>
+      </header>
+
+      <section className={styles.mapPage} aria-label="Зеленая волна">
       <aside className={styles.sidePanel} aria-label="Параметры маршрута">
         <button className={styles.backButton} onClick={onBack} type="button">
           Назад
@@ -1647,7 +1666,8 @@ function GreenWavePage({ onBack }: GreenWavePageProps) {
           startPoint={startPoint}
         />
       </section>
-    </section>
+      </section>
+    </>
   )
 }
 

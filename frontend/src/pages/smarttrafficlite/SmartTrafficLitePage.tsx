@@ -5,6 +5,9 @@ import './smarttrafficlite.css'
 type SmartTrafficLitePageProps = {
   apiBaseUrl?: string
   videoSrc?: string
+  onHome: () => void
+  onOpenGreenWave: () => void
+  onOpenScenarios: () => void
 }
 
 type MonitoringStatus = 'stopped' | 'running' | 'error' | 'warming'
@@ -46,6 +49,9 @@ type VideoSource = {
 export function SmartTrafficLitePage({
   apiBaseUrl = 'http://127.0.0.1:8001',
   videoSrc,
+  onHome,
+  onOpenGreenWave,
+  onOpenScenarios,
 }: SmartTrafficLitePageProps) {
   const defaultPreviewUrl = videoSrc ?? `${apiBaseUrl}/smart-traffic/sample-video.mp4`
   const [videoSource, setVideoSource] = useState<VideoSource>(() => buildDefaultVideoSource(defaultPreviewUrl))
@@ -242,6 +248,25 @@ export function SmartTrafficLitePage({
 
   return (
     <main className="stl-page">
+      <header className="topbar">
+        <button className="brand" onClick={onHome} type="button">
+          <span className="brand-mark" aria-hidden="true" />
+          <span>Smart Traffic</span>
+        </button>
+
+        <nav className="nav-actions" aria-label="Основная навигация">
+          <button className="nav-button" onClick={onHome} type="button">
+            Главная
+          </button>
+          <button className="nav-button" onClick={onOpenGreenWave} type="button">
+            Зеленая волна
+          </button>
+          <button className="nav-button nav-button-primary" onClick={onOpenScenarios} type="button">
+            Умный светофор
+          </button>
+        </nav>
+      </header>
+
       <section className="stl-hero">
         <div>
           <p className="stl-eyebrow">Smart Traffic Lite</p>
