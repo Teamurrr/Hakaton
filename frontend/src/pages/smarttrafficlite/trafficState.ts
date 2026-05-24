@@ -1,7 +1,7 @@
 import type {
   IncomingStreetPayload,
-  IncomingTrafficStateEvent,
   IncomingTrafficMessage,
+  IncomingTrafficStateEvent,
   PriorityStatus,
   StreetState,
 } from './types'
@@ -68,6 +68,7 @@ function normalizeStreet(street: IncomingStreetPayload | undefined, index: numbe
       street?.recommendedGreenSeconds ?? street?.recommended_green_seconds ?? undefined,
     updatedAt: street?.updatedAt ?? street?.updated_at ?? now,
     source: 'websocket',
+    frameIndex: street?.frameIndex ?? street?.frame_index,
   }
 }
 
@@ -90,12 +91,13 @@ function normalizeTrafficStateEvent(message: IncomingTrafficStateEvent): StreetS
 
   return {
     id: DEFAULT_STREAM_STREET_ID,
-    name: 'Локальное видео',
+    name: 'Поток с камеры',
     vehicleCount: payload?.vehicle_count ?? 0,
     priorityStatus: normalizePriority(payload?.priority_status),
     recommendedGreenSeconds: payload?.recommended_green_seconds,
     updatedAt: payload?.timestamp ?? now,
     source: payload?.video_path ?? 'websocket',
+    frameIndex: payload?.frame_index,
   }
 }
 

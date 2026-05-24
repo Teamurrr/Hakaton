@@ -5,26 +5,18 @@ type StreetStatusListProps = {
 }
 
 const priorityLabel: Record<PriorityStatus, string> = {
-  low: 'Низкий',
-  medium: 'Средний',
-  high: 'Высокий',
-  critical: 'Критический',
+  low: 'Низкая нагрузка',
+  medium: 'Средняя нагрузка',
+  high: 'Высокая нагрузка',
+  critical: 'Критическая нагрузка',
   unknown: 'Нет данных',
-}
-
-const priorityClass: Record<PriorityStatus, string> = {
-  low: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
-  medium: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
-  high: 'border-orange-500/30 bg-orange-500/10 text-orange-300',
-  critical: 'border-red-500/30 bg-red-500/10 text-red-300',
-  unknown: 'border-slate-600 bg-slate-800 text-slate-300',
 }
 
 export function StreetStatusList({ streets }: StreetStatusListProps) {
   if (streets.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-700 p-4 text-sm text-slate-400">
-        Ожидание первого сообщения от WebSocket.
+      <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 p-4 text-sm text-slate-400">
+        Ожидаем первый пакет аналитики от сервера.
       </div>
     )
   }
@@ -32,24 +24,22 @@ export function StreetStatusList({ streets }: StreetStatusListProps) {
   return (
     <ul className="space-y-3">
       {streets.map((street) => (
-        <li className="rounded-lg border border-slate-800 bg-slate-950 p-4" key={street.id}>
-          <div className="flex items-start justify-between gap-3">
+        <li className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4" key={street.id}>
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-white">{street.name}</h3>
+              <p className="text-sm font-semibold text-slate-100">{street.name}</p>
               <p className="mt-1 text-xs text-slate-500">
                 Обновлено: {new Date(street.updatedAt).toLocaleTimeString()}
               </p>
             </div>
-
-            <span
-              className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${priorityClass[street.priorityStatus]}`}
-            >
+            <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-medium text-slate-200">
               {priorityLabel[street.priorityStatus]}
             </span>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <Metric label="Машины" value={street.vehicleCount} />
+          <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+            <Metric label="Машин" value={street.vehicleCount} />
+            <Metric label="Кадр" value={street.frameIndex ?? '-'} />
             <Metric label="Зеленый" value={street.recommendedGreenSeconds ?? '-'} suffix="сек" />
           </div>
         </li>
@@ -60,10 +50,11 @@ export function StreetStatusList({ streets }: StreetStatusListProps) {
 
 function Metric({ label, value, suffix }: { label: string; value: number | string; suffix?: string }) {
   return (
-    <div className="rounded-md bg-slate-900 px-3 py-2">
+    <div className="rounded-xl bg-slate-950 px-3 py-2">
       <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-slate-100">
-        {value} {suffix && value !== '-' ? <span className="text-xs text-slate-500">{suffix}</span> : null}
+      <p className="mt-1 text-lg font-semibold text-white">
+        {value}
+        {suffix && value !== '-' ? <span className="ml-1 text-xs text-slate-400">{suffix}</span> : null}
       </p>
     </div>
   )

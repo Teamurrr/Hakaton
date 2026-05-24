@@ -10,6 +10,7 @@ export type StreetState = {
   recommendedGreenSeconds?: number
   updatedAt: string
   source?: string
+  frameIndex?: number
 }
 
 export type TrafficSocketState = {
@@ -32,6 +33,8 @@ export type IncomingStreetPayload = {
   recommended_green_seconds?: number
   updatedAt?: string
   updated_at?: string
+  frameIndex?: number
+  frame_index?: number
 }
 
 export type IncomingTrafficMessage = {

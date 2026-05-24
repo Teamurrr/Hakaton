@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,26 +32,59 @@ class TrafficController:
         self._monitoring_source: Path | None = None
         self._monitoring_status: str = "stopped"
         self._monitoring_error: str | None = None
+        self._latest_state: TrafficState | None = None
+        self._latest_state_version = 0
+        self._state_lock = threading.Lock()
+        self._analysis_stop_event = threading.Event()
+        self._analysis_thread: threading.Thread | None = None
 
     def start_hls_monitoring(self, stream_url: str) -> dict[str, str | None]:
         source_path = self._resolve_video_source(stream_url)
+        self._stop_analysis_worker()
         self._monitoring_source = source_path
         self._monitoring_status = "running"
         self._monitoring_error = None
+        self._analysis_stop_event = threading.Event()
+        self._analysis_thread = threading.Thread(
+            target=self._run_monitoring_analysis,
+            args=(source_path, self._analysis_stop_event),
+            daemon=True,
+        )
+        with self._state_lock:
+            self._latest_state = None
+            self._latest_state_version += 1
+
+        self._analysis_thread.start()
         return {"status": self._monitoring_status, "stream_url": str(source_path), "error": None}
 
     def stop_hls_monitoring(self) -> dict[str, str | None]:
+        self._stop_analysis_worker()
         self._monitoring_source = None
         self._monitoring_status = "stopped"
         self._monitoring_error = None
+        with self._state_lock:
+            self._latest_state = None
+            self._latest_state_version += 1
+
         return {"status": self._monitoring_status, "stream_url": None, "error": None}
 
     def get_hls_monitoring_status(self) -> dict[str, str | None]:
+        if self._monitoring_status == "running" and self._analysis_thread and not self._analysis_thread.is_alive():
+            self._monitoring_status = "stopped"
+
         return {
             "status": self._monitoring_status,
             "stream_url": str(self._monitoring_source) if self._monitoring_source else None,
             "error": self._monitoring_error,
         }
+
+    def get_latest_state(self) -> TrafficState | None:
+        with self._state_lock:
+            return self._latest_state
+
+    def get_latest_state_version(self) -> int:
+        with self._state_lock:
+            return self._latest_state_version
 
     def iter_processed_mjpeg_frames(self):
         source_path = self._monitoring_source or DEFAULT_VIDEO_PATH
@@ -133,29 +167,22 @@ class TrafficController:
 
     async def process_video_stream(self, video_path: str) -> AsyncIterator[TrafficState]:
         """Imitate video stream processing and yield current traffic state."""
-        detections_iter = iter(self.detector.detect_stream(video_path))
+        self.start_hls_monitoring(video_path)
+        last_version = -1
 
-        for frame_index in range(1, 100_000_000):
-            detections = await asyncio.to_thread(self._next_detection_batch, detections_iter)
-            if detections is _STREAM_END:
-                break
+        while True:
+            if self._monitoring_status == "error":
+                message = self._monitoring_error or "Traffic analysis failed"
+                raise RuntimeError(message)
 
-            vehicle_count, priority_status, counts_by_type, green_seconds = self.decision_maker.decide(
-                detections
-            )
+            version = self.get_latest_state_version()
+            latest_state = self.get_latest_state()
 
-            yield TrafficState(
-                video_path=video_path,
-                frame_index=frame_index,
-                timestamp=datetime.now(UTC),
-                vehicle_count=vehicle_count,
-                priority_status=priority_status,
-                vehicle_counts_by_type=counts_by_type,
-                detections=detections,
-                recommended_green_seconds=green_seconds,
-            )
+            if latest_state is not None and version != last_version:
+                last_version = version
+                yield latest_state
 
-            await asyncio.sleep(self.frame_interval_seconds)
+            await asyncio.sleep(0.2)
 
     @staticmethod
     def _next_detection_batch(detections_iter: Any):
@@ -163,3 +190,96 @@ class TrafficController:
             return next(detections_iter)
         except StopIteration:
             return _STREAM_END
+
+    def _stop_analysis_worker(self) -> None:
+        if self._analysis_thread and self._analysis_thread.is_alive():
+            self._analysis_stop_event.set()
+            self._analysis_thread.join(timeout=1.5)
+
+        self._analysis_thread = None
+
+    def _run_monitoring_analysis(self, source_path: Path, stop_event: threading.Event) -> None:
+        detect_frame = getattr(self.detector, "detect_frame", None)
+        if callable(detect_frame):
+            self._run_frame_monitoring_analysis(source_path, stop_event, detect_frame)
+            return
+
+        self._run_stream_monitoring_analysis(source_path, stop_event)
+
+    def _run_frame_monitoring_analysis(self, source_path: Path, stop_event: threading.Event, detect_frame: Any) -> None:
+        try:
+            import cv2
+        except ImportError:
+            self._run_stream_monitoring_analysis(source_path, stop_event)
+            return
+
+        capture = cv2.VideoCapture(str(source_path))
+        if not capture.isOpened():
+            self._monitoring_status = "error"
+            self._monitoring_error = f"Unable to open video source: {source_path}"
+            return
+
+        frame_index = 0
+
+        try:
+            while not stop_event.is_set():
+                success, frame = capture.read()
+                if not success:
+                    capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    frame_index = 0
+                    continue
+
+                frame_index += 1
+                if frame_index % 12 != 0:
+                    continue
+
+                detections = detect_frame(frame)
+                self._publish_traffic_state(source_path, frame_index, detections)
+
+                if stop_event.wait(self.frame_interval_seconds):
+                    break
+        except Exception as exc:
+            self._monitoring_status = "error"
+            self._monitoring_error = str(exc)
+        finally:
+            capture.release()
+
+    def _run_stream_monitoring_analysis(self, source_path: Path, stop_event: threading.Event) -> None:
+        try:
+            detections_iter = iter(self.detector.detect_stream(str(source_path)))
+
+            for frame_index in range(1, 100_000_000):
+                if stop_event.is_set():
+                    break
+
+                detections = self._next_detection_batch(detections_iter)
+                if detections is _STREAM_END:
+                    break
+
+                self._publish_traffic_state(source_path, frame_index, detections)
+
+                if stop_event.wait(self.frame_interval_seconds):
+                    break
+
+            if not stop_event.is_set():
+                self._monitoring_status = "stopped"
+        except Exception as exc:
+            self._monitoring_status = "error"
+            self._monitoring_error = str(exc)
+
+    def _publish_traffic_state(self, source_path: Path, frame_index: int, detections: Any) -> None:
+        vehicle_count, priority_status, counts_by_type, green_seconds = self.decision_maker.decide(detections)
+        traffic_state = TrafficState(
+            video_path=str(source_path),
+            frame_index=frame_index,
+            timestamp=datetime.now(UTC),
+            vehicle_count=vehicle_count,
+            priority_status=priority_status,
+            vehicle_counts_by_type=counts_by_type,
+            detections=detections,
+            recommended_green_seconds=green_seconds,
+        )
+
+        with self._state_lock:
+            self._latest_state = traffic_state
+            self._latest_state_version += 1

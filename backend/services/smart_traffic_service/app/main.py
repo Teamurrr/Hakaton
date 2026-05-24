@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -9,6 +9,8 @@ from app.presentation.ws.traffic_events_ws import router as traffic_ws_router
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_VIDEO_PATH = SERVICE_ROOT / "Road traffic video for object recognition.mp4"
+UPLOADS_DIR = SERVICE_ROOT / "uploads"
+UPLOADS_DIR.mkdir(exist_ok=True)
 
 
 app = FastAPI(
@@ -37,3 +39,13 @@ def health() -> dict[str, str]:
 @app.get("/smart-traffic/sample-video.mp4")
 def sample_video() -> FileResponse:
     return FileResponse(SAMPLE_VIDEO_PATH, media_type="video/mp4", filename=SAMPLE_VIDEO_PATH.name)
+
+
+@app.get("/smart-traffic/uploads/{file_name}")
+def uploaded_video(file_name: str) -> FileResponse:
+    target_path = (UPLOADS_DIR / file_name).resolve()
+
+    if not target_path.is_file() or target_path.parent != UPLOADS_DIR.resolve():
+        raise HTTPException(status_code=404, detail="Uploaded video not found")
+
+    return FileResponse(target_path, media_type="video/mp4", filename=target_path.name)

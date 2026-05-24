@@ -43,6 +43,14 @@ class YoloDetectorAdapter(DetectionModelPort):
         for result in model.predict(source=str(source_path), stream=True, conf=self.confidence_threshold, verbose=False):
             yield self._map_yolo_result(result)
 
+    def detect_frame(self, frame: Any) -> list[VehicleDetection]:
+        model = self._load_model()
+        results = model.predict(source=frame, conf=self.confidence_threshold, verbose=False)
+        if not results:
+            return []
+
+        return self._map_yolo_result(results[0])
+
     def _load_model(self) -> Any:
         if self._model is not None:
             return self._model
